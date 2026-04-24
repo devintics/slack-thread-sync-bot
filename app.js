@@ -42,36 +42,6 @@ function buildSlackThreadUrl(channel, ts) {
   return `https://${process.env.SLACK_TEAM_DOMAIN}.slack.com/archives/${channel}/p${cleanTs}`;
 }
 
-// ================= STEP 1 =================
-// Detect link in Channel A thread
-
-app.message(async ({ message }) => {
-  try {
-    // Only allow Channel A
-    if (message.channel !== MAIN_CHANNEL) return;
-
-    // Must be inside a thread
-    if (!message.text || !message.thread_ts) return;
-
-    const info = extractThreadInfo(message.text);
-    if (!info) return;
-
-    const key = `${info.channel}_${info.thread_ts}`;
-
-    mappings.set(key, {
-      channelA: message.channel,
-      threadA: message.thread_ts,
-      channelB: info.channel,
-      threadB: info.thread_ts
-    });
-
-    console.log("✅ Mapping created:", key);
-
-  } catch (err) {
-    console.error("Error in message handler:", err);
-  }
-});
-
 // Post a message when threads are synced
 async function postSyncStartedMessage(client, channelA, threadA, key) {
   await client.chat.postMessage({
@@ -121,6 +91,36 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
   });
 
   console.log("🛑 Mapping removed via button:", key);
+});
+
+// ================= STEP 1 =================
+// Detect link in Channel A thread
+
+app.message(async ({ message }) => {
+  try {
+    // Only allow Channel A
+    if (message.channel !== MAIN_CHANNEL) return;
+
+    // Must be inside a thread
+    if (!message.text || !message.thread_ts) return;
+
+    const info = extractThreadInfo(message.text);
+    if (!info) return;
+
+    const key = `${info.channel}_${info.thread_ts}`;
+
+    mappings.set(key, {
+      channelA: message.channel,
+      threadA: message.thread_ts,
+      channelB: info.channel,
+      threadB: info.thread_ts
+    });
+
+    console.log("✅ Mapping created:", key);
+
+  } catch (err) {
+    console.error("Error in message handler:", err);
+  }
 });
 
 // ================= STEP 2 =================
