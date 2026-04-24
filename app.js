@@ -19,6 +19,10 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
+app.event('message', async ({ event }) => {
+  console.log("EVENT RECEIVED:", event);
+});
+
 // ================= HELPERS =================
 
 // Extract Slack thread link info
