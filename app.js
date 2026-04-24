@@ -71,7 +71,10 @@ app.message(async ({ message }) => {
 
 app.event('message', async ({ event, client }) => {
   try {
+    // Ignore messages without thread
     if (!event.thread_ts) return;
+
+    // Ignore bot messages (optional but recommended)
     if (event.subtype === 'bot_message') return;
 
     const key = `${event.channel}_${event.thread_ts}`;
@@ -79,69 +82,113 @@ app.event('message', async ({ event, client }) => {
 
     if (!mapping) return;
 
+    // ================= USER INFO =================
     let username = "Unknown user";
     let avatar = null;
-    
+
     if (event.user) {
       try {
         const userInfo = await client.users.info({
           user: event.user
         });
-    
+
         const profile = userInfo.user.profile;
-    
+
         username =
           profile.display_name ||
           profile.real_name ||
           userInfo.user.name;
-    
+
         avatar = profile.image_48;
-    
+
       } catch (err) {
         console.error("Failed to fetch user info:", err);
       }
     }
 
+    // Handle bot/system messages
     if (event.bot_id) {
       username = "Bot";
       avatar = "https://cdn-icons-png.flaticon.com/512/4712/4712109.png";
     }
-    
-    const fallbackText = `${username}: ${event.text}`;
 
-    await client.chat.postMessage({
-      channel: mapping.channelA,
-      thread_ts: mapping.threadA,
-    
-      text: fallbackText, // fallback
-    
-      blocks: [
+    // ================= BUILD BLOCKS =================
+    const blocks = [];
+
+    // 👤 Header
+    blocks.push({
+      type: "context",
+      elements: [
         {
-          type: "context",
-          elements: [
-            {
-              type: "image",
-              image_url: avatar,
-              alt_text: username
-            },
-            {
-              type: "mrkdwn",
-              text: `*${username}*`
-            }
-          ]
+          type: "image",
+          image_url: avatar,
+          alt_text: username
         },
         {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: event.text || "_(no text)_"
-          }
+          type: "mrkdwn",
+          text: `*${username}*`
         }
       ]
     });
 
+    // 💬 Message text
+    if (event.text) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: event.text
+        }
+      });
+    }
+
+    // 🖼 FILES / ATTACHMENTS
+    if (event.files && event.files.length > 0) {
+      for (const file of event.files) {
+
+        // Image preview
+        if (file.mimetype && file.mimetype.startsWith("image/")) {
+          blocks.push({
+            type: "image",
+            image_url: file.url_private,
+            alt_text: file.name || "image"
+          });
+        } else {
+          // Other files
+          const sizeKB = file.size
+            ? Math.round(file.size / 1024)
+            : null;
+
+          blocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `📎 <${file.permalink}|${file.name || "File"}>${
+                sizeKB ? ` (${sizeKB} KB)` : ""
+              }`
+            }
+          });
+        }
+      }
+    }
+
+    // Optional divider (nice visual separation)
+    blocks.push({ type: "divider" });
+
+    // ================= SEND MESSAGE =================
+    const fallbackText = `${username}: ${event.text || ""}`;
+
+    await client.chat.postMessage({
+      channel: mapping.channelA,
+      thread_ts: mapping.threadA,
+      text: fallbackText,
+      blocks
+    });
+
+    console.log("🔄 Synced message with attachments:", key);
+
   } catch (err) {
-    console.error("Error syncing message:", err);
+    console.error("❌ Error syncing message:", err);
   }
 });
 
