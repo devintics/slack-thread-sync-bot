@@ -118,6 +118,8 @@ app.message(async ({ message }) => {
 
     console.log("✅ Mapping created:", key);
 
+    await postSyncStartedMessage(client, message.channel, message.thread_ts, key);
+    
   } catch (err) {
     console.error("Error in message handler:", err);
   }
