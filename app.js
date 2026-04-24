@@ -106,10 +106,10 @@ app.message(async ({ message, client }) => {
     if (!info) return;
 
     // ❌ Prevent linking to same channel (A → A)
-    //if (info.channel === MAIN_CHANNEL) {
-      //console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
-      //return;
-    //}
+    if (info.channel === MAIN_CHANNEL) {
+      console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
+      return;
+    }
 
     // 🔍 Fetch root message of Channel B thread
     const result = await client.conversations.replies({
