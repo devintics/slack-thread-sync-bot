@@ -19,9 +19,14 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
-app.event('message', async ({ event }) => {
-  console.log("EVENT RECEIVED:", event);
+const express = require('express');
+const server = express();
+
+server.get('/', (req, res) => {
+  res.send("Bot is alive");
 });
+
+server.listen(process.env.PORT || 3000);
 
 // ================= HELPERS =================
 
