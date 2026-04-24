@@ -96,8 +96,6 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 // ================= STEP 1 =================
 // Detect link in Channel A thread
 
-console.log("BOT ID:", event.bot_id);
-
 app.message(async ({ message, client }) => {
   try {
     // Only process messages in MAIN channel, must be inside a thread
@@ -108,10 +106,10 @@ app.message(async ({ message, client }) => {
     if (!info) return;
 
     // ❌ Prevent linking to same channel (A → A)
-    if (info.channel === MAIN_CHANNEL) {
-      console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
-      return;
-    }
+    //if (info.channel === MAIN_CHANNEL) {
+      //console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
+      //return;
+    //}
 
     // 🔍 Fetch root message of Channel B thread
     const result = await client.conversations.replies({
@@ -162,7 +160,7 @@ app.event('message', async ({ event, client }) => {
     if (!event.thread_ts) return;
 
     // Ignore bot messages from THIS bot only (prevent loops)
-    if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
+    //if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
 
     const key = `${event.channel}_${event.thread_ts}`;
     const mapping = mappings.get(key);
@@ -199,6 +197,8 @@ app.event('message', async ({ event, client }) => {
       avatar = "https://cdn-icons-png.flaticon.com/512/4712/4712109.png";
     }
 
+    console.log("EVENT DEBUG:", JSON.stringify(event, null, 2));
+    
     // ================= BUILD BLOCKS =================
     const blocks = [];
 
