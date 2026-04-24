@@ -36,6 +36,11 @@ function extractThreadInfo(text) {
   return { channel, thread_ts };
 }
 
+function buildSlackThreadUrl(channel, ts) {
+  const cleanTs = ts.replace('.', '');
+  return `https://${process.env.SLACK_TEAM_DOMAIN}.slack.com/archives/${channel}/p${cleanTs}`;
+}
+
 // ================= STEP 1 =================
 // Detect link in Channel A thread
 
@@ -116,6 +121,8 @@ app.event('message', async ({ event, client }) => {
     const blocks = [];
 
     // 👤 Header
+    const threadUrl = buildSlackThreadUrl(event.channel, event.thread_ts);
+    
     blocks.push({
       type: "context",
       elements: [
@@ -126,7 +133,7 @@ app.event('message', async ({ event, client }) => {
         },
         {
           type: "mrkdwn",
-          text: `*${username}*`
+          text: `*${username}* <${threadUrl}|[original thread]>`
         }
       ]
     });
