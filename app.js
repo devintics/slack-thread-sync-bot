@@ -96,7 +96,7 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 // ================= STEP 1 =================
 // Detect link in Channel A thread
 
-app.message(async ({ message }) => {
+app.message(async ({ message, client }) => {
   try {
     // Only allow Channel A
     if (message.channel !== MAIN_CHANNEL) return;
