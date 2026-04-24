@@ -19,15 +19,6 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
-const express = require('express');
-const server = express();
-
-server.get('/', (req, res) => {
-  res.send("Bot is alive");
-});
-
-server.listen(process.env.PORT || 3000);
-
 // ================= HELPERS =================
 
 // Extract Slack thread link info
