@@ -180,7 +180,7 @@ app.event('message', async ({ event, client }) => {
     }
 
     // Optional divider (nice visual separation)
-    blocks.push({ type: "divider" });
+    // blocks.push({ type: "divider" });
 
     // ================= SEND MESSAGE =================
     const fallbackText = `${username}: ${event.text || ""}`;
