@@ -268,7 +268,12 @@ app.event('message', async ({ event, client }) => {
     await client.chat.postMessage({
       channel: mapping.channelA,
       thread_ts: mapping.threadA,
+    
       text: fallbackText,
+    
+      unfurl_links: false,
+      unfurl_media: false,
+    
       blocks
     });
 
