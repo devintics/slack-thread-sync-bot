@@ -87,7 +87,7 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
   await client.chat.postMessage({
     channel: mapping.channelA,
     thread_ts: mapping.threadA,
-    text: "Sync cancelled"
+    text: "🛑 Sync cancelled"
   });
 
   console.log("🛑 Mapping removed via button:", key);
@@ -98,15 +98,40 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 
 app.message(async ({ message, client }) => {
   try {
-    // Only allow Channel A
+    // Only process messages in MAIN channel, must be inside a thread
     if (message.channel !== MAIN_CHANNEL) return;
-
-    // Must be inside a thread
     if (!message.text || !message.thread_ts) return;
 
     const info = extractThreadInfo(message.text);
     if (!info) return;
 
+    // ❌ Prevent linking to same channel (A → A)
+    if (info.channel === MAIN_CHANNEL) {
+      console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
+      return;
+    }
+
+    // 🔍 Fetch root message of Channel B thread
+    const result = await client.conversations.replies({
+      channel: info.channel,
+      ts: info.thread_ts,
+      limit: 1
+    });
+
+    const rootMessage = result.messages && result.messages[0];
+
+    // ❌ Prevent sync if no attachments/files
+    const hasFiles = rootMessage?.files && rootMessage.files.length > 0;
+
+    if (!hasFiles) {
+      console.log("⚠️ Sync blocked: no attachments in target thread", {
+        channel: info.channel,
+        thread_ts: info.thread_ts
+      });
+      return;
+    }
+
+    // ✅ Create mapping
     const key = `${info.channel}_${info.thread_ts}`;
 
     mappings.set(key, {
@@ -118,10 +143,11 @@ app.message(async ({ message, client }) => {
 
     console.log("✅ Mapping created:", key);
 
+    // ✅ Post sync started message
     await postSyncStartedMessage(client, message.channel, message.thread_ts, key);
-    
+
   } catch (err) {
-    console.error("Error in message handler:", err);
+    console.error("❌ Error in link detection:", err);
   }
 });
 
