@@ -101,7 +101,7 @@ app.event('message', async ({ event, client }) => {
       username = "Bot";
     }
     
-    const text = `*Update from ${username}:*\n${event.text}`;
+    const text = `*Update from ${username}:*\n>${event.text}`;
 
     await client.chat.postMessage({
       channel: mapping.channelA,
