@@ -79,7 +79,29 @@ app.event('message', async ({ event, client }) => {
 
     if (!mapping) return;
 
-    const text = `*Update from PSP:*\n${event.text}`;
+    let username = "Unknown user";
+
+    if (event.user) {
+      try {
+        const userInfo = await client.users.info({
+          user: event.user
+        });
+    
+        username =
+          userInfo.user.profile.display_name ||
+          userInfo.user.real_name ||
+          userInfo.user.name;
+    
+      } catch (err) {
+        console.error("Failed to fetch user info:", err);
+      }
+    }
+
+    if (event.bot_id) {
+      username = "Bot";
+    }
+    
+    const text = `*Update from ${username}:*\n${event.text}`;
 
     await client.chat.postMessage({
       channel: mapping.channelA,
@@ -127,7 +149,7 @@ app.event('reaction_added', async ({ event, client }) => {
         await client.chat.postMessage({
           channel: channelA,
           thread_ts: threadA,
-          text: `🔕 Sync stopped (:${event.reaction}:) and mirrored to Channel B`
+          text: `Sync stopped (:${event.reaction}:)`
         });
 
         console.log("🛑 Mapping removed:", key);
