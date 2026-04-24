@@ -96,6 +96,8 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 // ================= STEP 1 =================
 // Detect link in Channel A thread
 
+console.log("BOT ID:", event.bot_id);
+
 app.message(async ({ message, client }) => {
   try {
     // Only process messages in MAIN channel, must be inside a thread
@@ -159,8 +161,8 @@ app.event('message', async ({ event, client }) => {
     // Ignore messages without thread
     if (!event.thread_ts) return;
 
-    // Ignore bot messages (optional but recommended)
-    if (event.subtype === 'bot_message') return;
+    // Ignore bot messages from THIS bot only (prevent loops)
+    if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
 
     const key = `${event.channel}_${event.thread_ts}`;
     const mapping = mappings.get(key);
