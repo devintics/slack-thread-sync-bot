@@ -80,17 +80,22 @@ app.event('message', async ({ event, client }) => {
     if (!mapping) return;
 
     let username = "Unknown user";
-
+    let avatar = null;
+    
     if (event.user) {
       try {
         const userInfo = await client.users.info({
           user: event.user
         });
     
+        const profile = userInfo.user.profile;
+    
         username =
-          userInfo.user.profile.display_name ||
-          userInfo.user.real_name ||
+          profile.display_name ||
+          profile.real_name ||
           userInfo.user.name;
+    
+        avatar = profile.image_48;
     
       } catch (err) {
         console.error("Failed to fetch user info:", err);
@@ -99,14 +104,40 @@ app.event('message', async ({ event, client }) => {
 
     if (event.bot_id) {
       username = "Bot";
+      avatar = "https://cdn-icons-png.flaticon.com/512/4712/4712109.png";
     }
     
-    const text = `*Update from ${username}:*\n${event.text}`;
+    const fallbackText = `${username}: ${event.text}`;
 
     await client.chat.postMessage({
       channel: mapping.channelA,
       thread_ts: mapping.threadA,
-      text
+    
+      text: fallbackText, // fallback
+    
+      blocks: [
+        {
+          type: "context",
+          elements: [
+            {
+              type: "image",
+              image_url: avatar,
+              alt_text: username
+            },
+            {
+              type: "mrkdwn",
+              text: `*${username}*`
+            }
+          ]
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: event.text || "_(no text)_"
+          }
+        }
+      ]
     });
 
   } catch (err) {
