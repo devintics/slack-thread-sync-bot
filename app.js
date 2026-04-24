@@ -36,6 +36,7 @@ function extractThreadInfo(text) {
   return { channel, thread_ts };
 }
 
+// Build Slack thread link
 function buildSlackThreadUrl(channel, ts) {
   const cleanTs = ts.replace('.', '');
   return `https://${process.env.SLACK_TEAM_DOMAIN}.slack.com/archives/${channel}/p${cleanTs}`;
@@ -69,6 +70,57 @@ app.message(async ({ message }) => {
   } catch (err) {
     console.error("Error in message handler:", err);
   }
+});
+
+// Post a message when threads are synced
+async function postSyncStartedMessage(client, channelA, threadA, key) {
+  await client.chat.postMessage({
+    channel: channelA,
+    thread_ts: threadA,
+    text: "🔄 Thread sync started",
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "🔄 *Sync started*"
+        }
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Cancel sync"
+            },
+            style: "danger",
+            value: key, // we’ll use this to identify which mapping to remove
+            action_id: "cancel_sync"
+          }
+        ]
+      }
+    ]
+  });
+}
+
+app.action('cancel_sync', async ({ ack, body, client }) => {
+  await ack();
+
+  const key = body.actions[0].value;
+  const mapping = mappings.get(key);
+  if (!mapping) return;
+
+  mappings.delete(key);
+
+  await client.chat.postMessage({
+    channel: mapping.channelA,
+    thread_ts: mapping.threadA,
+    text: "Sync cancelled"
+  });
+
+  console.log("🛑 Mapping removed via button:", key);
 });
 
 // ================= STEP 2 =================
