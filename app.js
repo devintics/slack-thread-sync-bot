@@ -98,6 +98,9 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 
 app.message(async ({ message, client }) => {
   try {
+    if (message.subtype) return;
+    if (message.bot_id) return;
+    
     // Only process messages in MAIN channel, must be inside a thread
     if (message.channel !== MAIN_CHANNEL) return;
     if (!message.text || !message.thread_ts) return;
@@ -174,12 +177,13 @@ app.event('message', async ({ event, client }) => {
 
     // Ignore bot messages from THIS bot only (prevent loops)
     if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
+    if (event.username === "Thread Sync Bot") return;
 
     const key = `${event.channel}_${event.thread_ts}`;
     const mapping = mappings.get(key);
 
     if (!mapping) return;
-    if (!event.text && !event.files) return; // igonre empty messages
+    if (!event.text && !event.files) return; // ignore empty messages
 
     // Protection against changed and deleted messages
     if (event.subtype === 'message_changed') return;
@@ -212,7 +216,7 @@ app.event('message', async ({ event, client }) => {
     // Handle bot/system messages
     if (event.bot_id && !event.user) {
       username = event.username || "Bot";
-      avatar = profile.image_48 || "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png";
+      avatar = "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png";
     }
     
     // ================= BUILD BLOCKS =================
