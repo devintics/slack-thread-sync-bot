@@ -23,7 +23,7 @@ const app = new App({
 
 // Extract Slack thread link info
 function extractThreadInfo(text) {
-  const regex = /archives\/([A-Z0-9]+)\/p(\d+)/;
+  const regex = /archives\/([A-Z0-9]+)\/p(\d+)/i;
   const match = text.match(regex);
 
   if (!match) return null;
@@ -131,6 +131,19 @@ app.message(async ({ message, client }) => {
       return;
     }
 
+    // Prevent duplicates in the same thread
+    for (const [existingKey, value] of mappings.entries()) {
+      if (
+        value.channelA === message.channel &&
+        value.threadA === message.thread_ts &&
+        value.channelB === info.channel &&
+        value.threadB === info.thread_ts
+      ) {
+        console.log("⚠️ Duplicate sync ignored for this thread");
+        return;
+      }
+    }
+    
     // ✅ Create mapping
     const key = `${info.channel}_${info.thread_ts}`;
 
@@ -166,6 +179,11 @@ app.event('message', async ({ event, client }) => {
     const mapping = mappings.get(key);
 
     if (!mapping) return;
+    if (!event.text && !event.files) return; // igonre empty messages
+
+    // Protection against changed and deleted messages
+    if (event.subtype === 'message_changed') return;
+    if (event.subtype === 'message_deleted') return;
 
     // ================= USER INFO =================
     let username = "Unknown user";
@@ -184,7 +202,7 @@ app.event('message', async ({ event, client }) => {
           profile.real_name ||
           userInfo.user.name;
 
-        avatar = profile.image_48;
+        avatar = profile.image_48 || "https://api.slack.com/img/blocks/bkb_template_images/profile_1.png";
 
       } catch (err) {
         console.error("Failed to fetch user info:", err);
@@ -192,9 +210,9 @@ app.event('message', async ({ event, client }) => {
     }
 
     // Handle bot/system messages
-    if (event.bot_id) {
-      username = "Bot";
-      avatar = "https://cdn-icons-png.flaticon.com/512/4712/4712109.png";
+    if (event.bot_id && !event.user) {
+      username = event.username || "Bot";
+      avatar = profile.image_48 || "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png";
     }
     
     // ================= BUILD BLOCKS =================
@@ -213,7 +231,7 @@ app.event('message', async ({ event, client }) => {
         },
         {
           type: "mrkdwn",
-          text: `*${username}* <${threadUrl}|[original thread]>`
+          text: `*${username}* · <${threadUrl}|original thread>`
         }
       ]
     });
