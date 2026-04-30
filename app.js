@@ -42,6 +42,14 @@ function buildSlackThreadUrl(channel, ts) {
   return `https://${process.env.SLACK_TEAM_DOMAIN}.slack.com/archives/${channel}/p${cleanTs}`;
 }
 
+// Formatting multiline messages as blockquotes in Slack
+function formatAsQuote(text) {
+  return text
+    .split('\n')
+    .map(line => `> ${line}`)
+    .join('\n');
+}
+
 // Post a message when threads are synced
 async function postSyncStartedMessage(client, channelA, threadA, key) {
   await client.chat.postMessage({
@@ -109,10 +117,10 @@ app.message(async ({ message, client }) => {
     if (!info) return;
 
     // ❌ Prevent linking to same channel (A → A)
-    if (info.channel === MAIN_CHANNEL) {
-      console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
-      return;
-    }
+    //if (info.channel === MAIN_CHANNEL) {
+      //console.log("⚠️ Sync blocked: attempted to link thread from MAIN channel");
+      //return;
+    //}
 
     // 🔍 Fetch root message of Channel B thread
     const result = await client.conversations.replies({
@@ -242,11 +250,13 @@ app.event('message', async ({ event, client }) => {
 
     // 💬 Message text
     if (event.text) {
+      const quotedText = formatAsQuote(event.text);
+    
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: event.text
+          text: quotedText
         }
       });
     }
