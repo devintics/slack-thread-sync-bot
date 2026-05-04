@@ -372,6 +372,20 @@ app.event('reaction_added', async ({ event, client }) => {
   }
 });
 
+// Allow unwanted messages deletion via reaction
+app.event('reaction_added', async ({ event, client }) => {
+  if (event.reaction !== 'wastebasket') return;
+
+  try {
+    await client.chat.delete({
+      channel: event.item.channel,
+      ts: event.item.ts
+    });
+  } catch (err) {
+    console.error("Delete failed:", err);
+  }
+});
+
 // ================= START =================
 
 (async () => {
