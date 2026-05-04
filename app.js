@@ -19,6 +19,11 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
+// Uptime Monitor assist
+app.receiver.router.get('/', (req, res) => { 
+  res.status(200).send('OK');
+});
+
 // ================= HELPERS =================
 
 // Extract Slack thread link info
