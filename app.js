@@ -185,7 +185,7 @@ app.event('message', async ({ event, client }) => {
 
     // Ignore bot messages from THIS bot only (prevent loops)
     if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
-    if (event.username === "Thread Sync Bot") return;
+    if (event.username === "Spinarium Sync Bot") return;
 
     const key = `${event.channel}_${event.thread_ts}`;
     const mapping = mappings.get(key);
