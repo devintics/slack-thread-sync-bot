@@ -24,7 +24,7 @@ const app = new App({
 });
 
 // Uptime Monitor assist
-app.receiver.router.get('/', (req, res) => { 
+receiver.router.get('/', (req, res) => {
   res.status(200).send('OK');
 });
 
