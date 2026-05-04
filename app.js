@@ -1,5 +1,11 @@
 const { App, ExpressReceiver } = require('@slack/bolt');
 
+// FS module for constant file mapping
+const fs = require('fs');
+const path = require('path');
+
+const DATA_FILE = path.join(__dirname, 'mappings.json');
+
 // ================= CONFIG =================
 
 // 👉 Main channel ID:
@@ -29,6 +35,43 @@ receiver.router.get('/', (req, res) => {
 });
 
 // ================= HELPERS =================
+
+// Load mappings from file
+function loadMappings() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE);
+
+      console.log("📄 Raw mappings file:");
+      console.log(raw.toString());
+      
+      const parsed = JSON.parse(raw);
+
+      for (const [key, value] of Object.entries(parsed)) {
+        mappings.set(key, value);
+      }
+
+      console.log("📂 Mappings loaded:", mappings.size);
+    } else {
+      fs.writeFileSync(DATA_FILE, "{}");
+      console.log("📂 Created empty mappings file");
+    }
+  } catch (err) {
+    console.error("❌ Failed to load mappings:", err);
+  }
+}
+
+// Save mappings to file
+function saveMappings() {
+  try {
+    const tmpFile = DATA_FILE + ".tmp";
+    fs.writeFileSync(tmpFile, JSON.stringify(Object.fromEntries(mappings), null, 2));
+    fs.renameSync(tmpFile, DATA_FILE);
+    console.log("💾 Mappings saved");
+  } catch (err) {
+    console.error("❌ Failed to save mappings:", err);
+  }
+}
 
 // Extract Slack thread link info
 function extractThreadInfo(text) {
@@ -100,6 +143,7 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
   if (!mapping) return;
 
   mappings.delete(key);
+  saveMappings();
 
   await client.chat.postMessage({
     channel: mapping.channelA,
@@ -173,6 +217,7 @@ app.message(async ({ message, client }) => {
       channelB: info.channel,
       threadB: info.thread_ts
     });
+    saveMappings();
 
     console.log("✅ Mapping created:", key);
 
@@ -355,6 +400,7 @@ app.event('reaction_added', async ({ event, client }) => {
 
         // 👉 Remove mapping (stop sync)
         mappings.delete(key);
+        saveMappings();
 
         // 👉 Confirmation message
         await client.chat.postMessage({
@@ -389,6 +435,7 @@ app.event('reaction_added', async ({ event, client }) => {
 // ================= START =================
 
 (async () => {
+  loadMappings();
   await app.start(process.env.PORT || 3000);
   console.log('⚡️ Slack bot is running!');
 })();
