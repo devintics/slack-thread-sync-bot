@@ -432,6 +432,56 @@ app.event('reaction_added', async ({ event, client }) => {
   }
 });
 
+// ================= COMMANDS =================
+// Show the list of the active mappings
+app.command('/sync-status', async ({ command, ack, respond }) => {
+  await ack();
+
+  try {
+    // 🔒 Restrict to MAIN_CHANNEL only
+    if (command.channel_id !== MAIN_CHANNEL) {
+      await respond({
+        response_type: "ephemeral",
+        text: "⚠️ This command can only be used in the main channel."
+      });
+      return;
+    }
+
+    // 📭 No mappings
+    if (mappings.size === 0) {
+      await respond({
+        response_type: "ephemeral",
+        text: "📭 No active syncs."
+      });
+      return;
+    }
+
+    // 🔄 Build response
+    let text = `🔄 *Active syncs: ${mappings.size}*\n\n`;
+
+    for (const [key, value] of mappings.entries()) {
+      const linkA = buildSlackThreadUrl(value.channelA, value.threadA);
+      const linkB = buildSlackThreadUrl(value.channelB, value.threadB);
+
+      text += `• <${linkA}|Channel A thread> ↔ <${linkB}|Channel B thread>\n`;
+    }
+
+    // 📤 Send response (visible only to user)
+    await respond({
+      response_type: "ephemeral",
+      text
+    });
+
+  } catch (err) {
+    console.error("❌ Error in /sync-status:", err);
+
+    await respond({
+      response_type: "ephemeral",
+      text: "❌ Failed to fetch sync status."
+    });
+  }
+});
+
 // ================= START =================
 
 (async () => {
