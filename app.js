@@ -44,11 +44,19 @@ async function loadMappings() {
 
     if (all) {
       for (const [key, value] of Object.entries(all)) {
-        mappings.set(key, JSON.parse(value));
+
+        // Upstash may already return parsed objects
+        const parsedValue =
+          typeof value === "string"
+            ? JSON.parse(value)
+            : value;
+
+        mappings.set(key, parsedValue);
       }
     }
 
     console.log(`📂 Mappings loaded from Redis: ${mappings.size}`);
+
   } catch (err) {
     console.error("❌ Failed to load mappings:", err);
   }
