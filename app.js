@@ -112,10 +112,13 @@ function formatAsQuote(text) {
 }
 
 // Check if bot was mentioned
-function isBotMentioned(text) {
-  if (!text) return false;
-
-  return text.includes(`<@${process.env.SLACK_BOT_ID}>`);
+function isBotMentioned(message) {
+  return (
+    message?.text?.includes(`<@${process.env.SLACK_BOT_ID}>`) ||
+    message?.blocks?.some(b =>
+      JSON.stringify(b).includes(process.env.SLACK_BOT_ID)
+    )
+  );
 }
 
 // Post a message when threads are synced
@@ -185,10 +188,9 @@ app.message(async ({ message, client }) => {
     // 1. Message is in MAIN_CHANNEL
     // OR
     // 2. Bot was mentioned
-    const botMentioned = isBotMentioned(message.text);
+    const botMentioned = isBotMentioned(message);
     const allowed =
-      message.channel === MAIN_CHANNEL ||
-      botMentioned;
+      message.channel === MAIN_CHANNEL || botMentioned;
     if (!allowed) return;
 
     const info = extractThreadInfo(message.text);
@@ -214,7 +216,7 @@ app.message(async ({ message, client }) => {
       rootMessage?.files &&
       rootMessage.files.length > 0;
     
-    if (!hasFiles && !botMentioned) {
+    if (!hasFiles && message.channel === MAIN_CHANNEL && !botMentioned) {
       console.log("⚠️ Sync blocked: no attachments in target thread", {
         channel: info.channel,
         thread_ts: info.thread_ts
