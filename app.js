@@ -111,6 +111,13 @@ function formatAsQuote(text) {
     .join('\n');
 }
 
+// Check if bot was mentioned
+function isBotMentioned(text) {
+  if (!text) return false;
+
+  return text.includes(`<@${process.env.SLACK_BOT_ID}>`);
+}
+
 // Post a message when threads are synced
 async function postSyncStartedMessage(client, channelA, threadA, key) {
   await client.chat.postMessage({
@@ -171,9 +178,18 @@ app.message(async ({ message, client }) => {
     if (message.subtype) return;
     if (message.bot_id) return;
     
-    // Only process messages in MAIN channel, must be inside a thread
-    if (message.channel !== MAIN_CHANNEL) return;
+    // Must be thread message with text
     if (!message.text || !message.thread_ts) return;
+    
+    // Allow if:
+    // 1. Message is in MAIN_CHANNEL
+    // OR
+    // 2. Bot was mentioned
+    const botMentioned = isBotMentioned(message.text);
+    const allowed =
+      message.channel === MAIN_CHANNEL ||
+      botMentioned;
+    if (!allowed) return;
 
     const info = extractThreadInfo(message.text);
     if (!info) return;
@@ -193,14 +209,17 @@ app.message(async ({ message, client }) => {
 
     const rootMessage = result.messages && result.messages[0];
 
-    // ❌ Prevent sync if no attachments/files
-    const hasFiles = rootMessage?.files && rootMessage.files.length > 0;
-
-    if (!hasFiles) {
+    // ❌ Prevent sync if no attachments/files, EXCEPT when bot was explicitly mentioned
+    const hasFiles =
+      rootMessage?.files &&
+      rootMessage.files.length > 0;
+    
+    if (!hasFiles && !botMentioned) {
       console.log("⚠️ Sync blocked: no attachments in target thread", {
         channel: info.channel,
         thread_ts: info.thread_ts
       });
+    
       return;
     }
 
