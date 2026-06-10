@@ -261,6 +261,56 @@ app.message(async ({ message, client }) => {
   }
 });
 
+// ================= STEP 1B =================
+// Allow sync creation via @mention in any channel
+
+app.event('app_mention', async ({ event, client }) => {
+  try {
+
+    if (!event.thread_ts) return;
+
+    const info = extractThreadInfo(event.text);
+    if (!info) return;
+
+    // Prevent duplicates
+    for (const [existingKey, value] of mappings.entries()) {
+      if (
+        value.channelA === event.channel &&
+        value.threadA === event.thread_ts &&
+        value.channelB === info.channel &&
+        value.threadB === info.thread_ts
+      ) {
+        console.log("⚠️ Duplicate sync ignored");
+        return;
+      }
+    }
+
+    const key = `${info.channel}_${info.thread_ts}`;
+
+    const mapping = {
+      channelA: event.channel,
+      threadA: event.thread_ts,
+      channelB: info.channel,
+      threadB: info.thread_ts
+    };
+
+    mappings.set(key, mapping);
+    await saveMapping(key, mapping);
+
+    console.log("✅ Mention-created mapping:", key);
+
+    await postSyncStartedMessage(
+      client,
+      event.channel,
+      event.thread_ts,
+      key
+    );
+
+  } catch (err) {
+    console.error("❌ Error in app mention handler:", err);
+  }
+});
+
 // ================= STEP 2 =================
 // Listen for replies in Channel B
 
