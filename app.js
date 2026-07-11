@@ -493,66 +493,6 @@ app.event('message', async ({ event, client }) => {
       }
     }
 
-    // ================= BLOCK KIT =================
-    
-    if (
-      event.blocks &&
-      event.blocks.length > 0
-    ) {
-    
-      for (const block of event.blocks) {
-    
-        if (
-          block.type === "section" &&
-          block.text?.text
-        ) {
-    
-          blocks.push({
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: block.text.text
-            }
-          });
-        }
-    
-        if (
-          block.type === "image"
-        ) {
-    
-          blocks.push({
-            type: "image",
-            image_url: block.image_url,
-            alt_text: block.alt_text || "image"
-          });
-        }
-    
-        if (
-          block.type === "context"
-        ) {
-    
-          const text = block.elements
-            .filter(e => e.type === "mrkdwn")
-            .map(e => e.text)
-            .join(" • ");
-    
-          if (text) {
-    
-            blocks.push({
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text
-                }
-              ]
-            });
-    
-          }
-        }
-      }
-    }
-    
     // Optional divider (nice visual separation)
     // blocks.push({ type: "divider" });
 
