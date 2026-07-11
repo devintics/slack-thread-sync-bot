@@ -327,7 +327,15 @@ app.event('message', async ({ event, client }) => {
     const mapping = mappings.get(key);
 
     if (!mapping) return;
-    if (!event.text && !event.files) return; // ignore empty messages
+    
+    // Ignore only truly empty messages
+    if (
+      !event.text &&
+      (!event.files || event.files.length === 0) &&
+      (!event.blocks || event.blocks.length === 0)
+    ) {
+      return;
+    }
 
     // Protection against changed and deleted messages
     if (event.subtype === 'message_changed') return;
@@ -397,41 +405,169 @@ app.event('message', async ({ event, client }) => {
       });
     }
 
-    // 🖼 FILES / ATTACHMENTS
-    if (event.files && event.files.length > 0) {
+    // ================= FILES / ATTACHMENTS =================
+    
+    if (event.files?.length) {
+    
+      console.log(
+        "📎 Incoming files:",
+        JSON.stringify(event.files, null, 2)
+      );
+    
       for (const file of event.files) {
-
-        // Image preview
-        if (file.mimetype && file.mimetype.startsWith("image/")) {
+    
+        const name =
+          file.name ||
+          file.title ||
+          "Attachment";
+    
+        const permalink =
+          file.permalink ||
+          file.permalink_public ||
+          file.url_private ||
+          null;
+    
+        const mimetype = file.mimetype || "";
+    
+        // ---------- Images ----------
+        if (
+          mimetype.startsWith("image/") &&
+          file.url_private
+        ) {
+    
           blocks.push({
             type: "image",
             image_url: file.url_private,
-            alt_text: file.name || "image"
+            alt_text: name
           });
-        } else {
-          // Other files
-          const sizeKB = file.size
-            ? Math.round(file.size / 1024)
-            : null;
-
+    
+          continue;
+        }
+    
+        // ---------- Video ----------
+        if (
+          mimetype.startsWith("video/")
+        ) {
+    
           blocks.push({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `📎 <${file.permalink}|${file.name || "File"}>${
-                sizeKB ? ` (${sizeKB} KB)` : ""
-              }`
+              text: permalink
+                ? `🎬 <${permalink}|${name}>`
+                : `🎬 ${name}`
             }
           });
+    
+          continue;
         }
+    
+        // ---------- PDFs ----------
+        if (
+          mimetype === "application/pdf"
+        ) {
+    
+          blocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: permalink
+                ? `📄 <${permalink}|${name}>`
+                : `📄 ${name}`
+            }
+          });
+    
+          continue;
+        }
+    
+        // ---------- Everything else ----------
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: permalink
+              ? `📎 <${permalink}|${name}>`
+              : `📎 ${name}`
+          }
+        });
       }
     }
 
+    // ================= BLOCK KIT =================
+    
+    if (
+      event.blocks &&
+      event.blocks.length > 0
+    ) {
+    
+      for (const block of event.blocks) {
+    
+        if (
+          block.type === "section" &&
+          block.text?.text
+        ) {
+    
+          blocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: block.text.text
+            }
+          });
+        }
+    
+        if (
+          block.type === "image"
+        ) {
+    
+          blocks.push({
+            type: "image",
+            image_url: block.image_url,
+            alt_text: block.alt_text || "image"
+          });
+        }
+    
+        if (
+          block.type === "context"
+        ) {
+    
+          const text = block.elements
+            .filter(e => e.type === "mrkdwn")
+            .map(e => e.text)
+            .join(" • ");
+    
+          if (text) {
+    
+            blocks.push({
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text
+                }
+              ]
+            });
+    
+          }
+        }
+      }
+    }
+    
     // Optional divider (nice visual separation)
     // blocks.push({ type: "divider" });
 
     // ================= SEND MESSAGE =================
-    const fallbackText = `${username}: ${event.text || ""}`;
+    let fallback = event.text;
+    
+    if (!fallback && event.files?.length) {
+      fallback = "[Attachment]";
+    }
+    
+    if (!fallback && event.blocks?.length) {
+      fallback = "[Rich Slack message]";
+    }
+    
+    const fallbackText = `${username}: ${fallback || ""}`;
 
     await client.chat.postMessage({
       channel: mapping.channelA,
