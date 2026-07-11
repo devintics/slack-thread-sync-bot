@@ -1,6 +1,8 @@
 const { App, ExpressReceiver } = require('@slack/bolt');
 
 const { Redis } = require('@upstash/redis');
+const fs = require('fs');
+const os = require('os');
 
 const redis = new Redis({
   url: process.env.REDIS_URL,
@@ -592,52 +594,84 @@ app.event('reaction_added', async ({ event, client }) => {
 
 // ================= COMMANDS =================
 // Show the list of the active mappings
-app.command('/sync-status', async ({ command, ack, respond }) => {
+
+app.command('/sync-status', async ({ command, ack, client }) => {
   await ack();
 
   try {
-    // 🔒 Restrict to MAIN_CHANNEL only
+    // Restrict command to MAIN_CHANNEL
     if (command.channel_id !== MAIN_CHANNEL) {
-      await respond({
-        response_type: "ephemeral",
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
         text: "⚠️ This command can only be used in the main channel."
       });
       return;
     }
 
-    // 📭 No mappings
     if (mappings.size === 0) {
-      await respond({
-        response_type: "ephemeral",
+      await client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
         text: "📭 No active syncs."
       });
       return;
     }
 
-    // 🔄 Build response
-    let text = `🔄 *Active syncs: ${mappings.size}*\n\n`;
+    // Convert Map into array
+    const mappingList = [...mappings.values()];
 
-    for (const [key, value] of mappings.entries()) {
-      const linkA = buildSlackThreadUrl(value.channelA, value.threadA);
-      const linkB = buildSlackThreadUrl(value.channelB, value.threadB);
-
-      text += `• <${linkA}|Channel A thread> ↔ <${linkB}|Channel B thread>\n`;
-    }
-
-    // 📤 Send response (visible only to user)
-    await respond({
-      response_type: "ephemeral",
-      text
+    // Sort oldest → newest
+    mappingList.sort((a, b) => {
+      const tsA = Number(a.threadA.split('.')[0]);
+      const tsB = Number(b.threadA.split('.')[0]);
+      return tsA - tsB;
     });
+
+    let text = "";
+
+    mappingList.forEach((mapping, index) => {
+      const unix = Number(mapping.threadA.split('.')[0]) * 1000;
+      const date = new Date(unix);
+      const formatted =
+        `${date.getFullYear()}.` +
+        `${String(date.getMonth() + 1).padStart(2, '0')}.` +
+        `${String(date.getDate()).padStart(2, '0')} ` +
+        `${String(date.getHours()).padStart(2, '0')}:` +
+        `${String(date.getMinutes()).padStart(2, '0')}`;
+      const link = buildSlackThreadUrl(
+        mapping.channelA,
+        mapping.threadA
+      );
+      text += `${index + 1}) ${formatted} — ${link}\n`;
+    });
+
+    // Create temporary txt file
+    const filePath = `${os.tmpdir()}/sync-status.txt`;
+
+    fs.writeFileSync(filePath, text);
+
+    // Upload to Slack
+    await client.files.uploadV2({
+      channel_id: command.channel_id,
+      file: filePath,
+      filename: "sync-status.txt",
+      title: `Active syncs (${mappingList.length})`
+    });
+
+    // Remove temporary file
+    fs.unlinkSync(filePath);
 
   } catch (err) {
     console.error("❌ Error in /sync-status:", err);
-
-    await respond({
-      response_type: "ephemeral",
-      text: "❌ Failed to fetch sync status."
+    await client.chat.postEphemeral({
+      channel: command.channel_id,
+      user: command.user_id,
+      text: "❌ Failed to generate sync report."
     });
+
   }
+
 });
 
 // ================= START =================
