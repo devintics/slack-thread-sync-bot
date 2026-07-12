@@ -318,6 +318,7 @@ app.event('app_mention', async ({ event, client }) => {
 
 app.event('message', async ({ event, client }) => {
   try {
+    console.log(JSON.stringify(event, null, 2));
     // Ignore messages without thread
     if (!event.thread_ts) return;
 
