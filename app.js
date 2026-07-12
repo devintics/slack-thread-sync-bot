@@ -318,7 +318,6 @@ app.event('app_mention', async ({ event, client }) => {
 
 app.event('message', async ({ event, client }) => {
   try {
-    console.log(JSON.stringify(event, null, 2));
     // Ignore messages without thread
     if (!event.thread_ts) return;
 
@@ -419,28 +418,74 @@ app.event('message', async ({ event, client }) => {
     
       for (const file of event.files) {
     
+        // ----------------------------------------------------
+        // Slack sometimes sends only:
+        // { file_access: "check_file_info", id: "F..." }
+        // Fetch the full metadata if necessary.
+        // ----------------------------------------------------
+    
+        let currentFile = file;
+    
+        if (file.file_access === "check_file_info") {
+    
+          try {
+    
+            console.log(`🔎 Fetching full info for file ${file.id}`);
+    
+            const result = await client.files.info({
+              file: file.id
+            });
+    
+            currentFile = result.file;
+    
+            console.log(
+              "✅ Full file info:",
+              JSON.stringify(currentFile, null, 2)
+            );
+    
+          } catch (err) {
+    
+            console.error(
+              `❌ Failed to fetch file info (${file.id}):`,
+              err
+            );
+    
+            // Fallback if Slack doesn't allow access
+            blocks.push({
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "📎 Attachment"
+              }
+            });
+    
+            continue;
+          }
+        }
+    
         const name =
-          file.name ||
-          file.title ||
+          currentFile.name ||
+          currentFile.title ||
           "Attachment";
     
         const permalink =
-          file.permalink ||
-          file.permalink_public ||
-          file.url_private ||
+          currentFile.permalink ||
+          currentFile.permalink_public ||
+          currentFile.url_private ||
           null;
     
-        const mimetype = file.mimetype || "";
+        const mimetype =
+          currentFile.mimetype || "";
     
         // ---------- Images ----------
         if (
           mimetype.startsWith("image/") &&
-          file.url_private
+          currentFile.url_private
         ) {
     
           blocks.push({
             type: "image",
-            image_url: file.url_private,
+            image_url: currentFile.url_private,
             alt_text: name
           });
     
