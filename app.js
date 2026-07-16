@@ -318,6 +318,22 @@ app.event('app_mention', async ({ event, client }) => {
 
 app.event('message', async ({ event, client }) => {
   try {
+    
+    console.log(
+      "EVENT:",
+      JSON.stringify(
+        {
+          text: event.text,
+          subtype: event.subtype,
+          files: event.files,
+          blocks: event.blocks,
+          attachments: event.attachments
+        },
+        null,
+        2
+      )
+    );
+    
     // Ignore messages without thread
     if (!event.thread_ts) return;
 
