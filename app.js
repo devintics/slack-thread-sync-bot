@@ -318,22 +318,6 @@ app.event('app_mention', async ({ event, client }) => {
 
 app.event('message', async ({ event, client }) => {
   try {
-    
-    console.log(
-      "EVENT:",
-      JSON.stringify(
-        {
-          text: event.text,
-          subtype: event.subtype,
-          files: event.files,
-          blocks: event.blocks,
-          attachments: event.attachments
-        },
-        null,
-        2
-      )
-    );
-    
     // Ignore messages without thread
     if (!event.thread_ts) return;
 
@@ -411,8 +395,23 @@ app.event('message', async ({ event, client }) => {
     });
 
     // 💬 Message text
-    if (event.text) {
-      const quotedText = formatAsQuote(event.text);
+    let messageText = event.text;
+    
+    if (event.blocks?.length) {
+    
+      const section = event.blocks.find(
+        b => b.type === "section" && b.text?.text
+      );
+    
+      if (section) {
+        messageText = section.text.text;
+      }
+    
+    }
+    
+    if (messageText) {
+    
+      const quotedText = formatAsQuote(messageText);
     
       blocks.push({
         type: "section",
@@ -421,17 +420,38 @@ app.event('message', async ({ event, client }) => {
           text: quotedText
         }
       });
+    
     }
 
+    // =====================================================
+    // Slack sometimes sends attachments inside Block Kit
+    // instead of event.files. Convert them into event.files
+    // so the existing renderer can process them.
+    // =====================================================
+    
+    if (
+      (!event.files || event.files.length === 0) &&
+      event.blocks?.length
+    ) {
+    
+      event.files = [];
+    
+      for (const block of event.blocks) {
+    
+        if (
+          block.type === "file" &&
+          block.file
+        ) {
+          event.files.push(block.file);
+        }
+    
+      }
+    
+    }
+    
     // ================= FILES / ATTACHMENTS =================
     
     if (event.files?.length) {
-    
-      console.log(
-        "📎 Incoming files:",
-        JSON.stringify(event.files, null, 2)
-      );
-    
       for (const file of event.files) {
     
         // ----------------------------------------------------
