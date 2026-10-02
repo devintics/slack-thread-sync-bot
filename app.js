@@ -15,7 +15,7 @@ const redis = new Redis({
 const MAIN_CHANNEL = "C08M6UU28Q2";
 
 // Emojis that stop syncing
-const STOP_EMOJIS = ["white_check_mark", "x"];
+const STOP_EMOJIS = ["white_check_mark", "x", "two", "no_entry_sign", "no_entry"];
 
 // In-memory storage
 // key: B_channel + B_thread_ts
