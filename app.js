@@ -213,21 +213,23 @@ app.message(async ({ message, client }) => {
 
     const rootMessage = result.messages && result.messages[0];
 
-    console.log("🔎 Root validation debug:", {
-      linked_ts: info.thread_ts,
-      returned_ts: rootMessage?.ts,
-      returned_thread_ts: rootMessage?.thread_ts,
-      message_count: result.messages?.length
-    });
-
     // ❌ Only allow links to the original (root) message
-    if (!rootMessage || rootMessage.ts !== info.thread_ts) {
+    const isRootMessage =
+      rootMessage &&
+      rootMessage.ts === info.thread_ts &&
+      (
+        !rootMessage.thread_ts ||
+        rootMessage.thread_ts === rootMessage.ts
+      );
+
+    if (!isRootMessage) {
       console.log("⚠️ Sync blocked: link points to a thread reply, not the root message", {
         channel: info.channel,
         linked_ts: info.thread_ts,
-        root_ts: rootMessage?.ts
+        returned_ts: rootMessage?.ts,
+        returned_thread_ts: rootMessage?.thread_ts
       });
-    
+
       return;
     }
     
