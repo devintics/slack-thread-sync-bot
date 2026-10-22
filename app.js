@@ -213,20 +213,17 @@ app.message(async ({ message, client }) => {
 
     const rootMessage = result.messages && result.messages[0];
 
-    // ❌ Prevent sync if no attachments/files, EXCEPT when bot was explicitly mentioned
-    const hasFiles =
-      rootMessage?.files &&
-      rootMessage.files.length > 0;
-    
-    if (!hasFiles && message.channel === MAIN_CHANNEL && !botMentioned) {
-      console.log("⚠️ Sync blocked: no attachments in target thread", {
+    // ❌ Only allow links to the original (root) message
+    if (!rootMessage || rootMessage.ts !== info.thread_ts) {
+      console.log("⚠️ Sync blocked: link points to a thread reply, not the root message", {
         channel: info.channel,
-        thread_ts: info.thread_ts
+        linked_ts: info.thread_ts,
+        root_ts: rootMessage?.ts
       });
     
       return;
     }
-
+    
     // Prevent duplicates in the same thread
     for (const [existingKey, value] of mappings.entries()) {
       if (
