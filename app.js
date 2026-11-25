@@ -1,6 +1,7 @@
 const { App, ExpressReceiver } = require('@slack/bolt');
 
 const { Redis } = require('@upstash/redis');
+const cron = require('node-cron');
 const fs = require('fs');
 const os = require('os');
 
@@ -16,6 +17,10 @@ const MAIN_CHANNEL = "C08M6UU28Q2";
 
 // Emojis that stop syncing
 const STOP_EMOJIS = ["white_check_mark", "x", "two", "no_entry_sign", "no_entry"];
+
+const SYNC_START_EMOJI = "link";
+
+const INACTIVITY_MS = 10 * 24 * 60 * 60 * 1000;
 
 // In-memory storage
 // key: B_channel + B_thread_ts
@@ -158,6 +163,7 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
   return result.ts;
 }
 
+// Action for button to stop/cancel sync
 app.action('cancel_sync', async ({ ack, body, client }) => {
   await ack();
 
@@ -175,31 +181,74 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
     await client.reactions.remove({
       channel: mapping.channelA,
       timestamp: mapping.threadA,
-      name: "link"
+      name: SYNC_START_EMOJI
     });
   } catch (err) {
     console.error("⚠️ Failed to remove sync-start reaction:", err);
   }
 
-  // Older mappings may not have a notification timestamp.
-  if (!mapping.notificationTs) return;
+  const cancelledBlocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "⛓️‍💥Sync cancelled"
+      }
+    }
+  ];
 
-  await client.chat.update({
-    channel: mapping.channelA,
-    ts: mapping.notificationTs,
-    text: "⛓️‍💥Sync cancelled",
+  // Update the original sync notification, if it has a saved timestamp.
+  if (mapping.notificationTs) {
+    await client.chat.update({
+      channel: mapping.channelA,
+      ts: mapping.notificationTs,
+      text: "⛓️‍💥Sync cancelled",
+      blocks: cancelledBlocks
+    });
+  }
+
+  // If Stop sync was clicked on a reminder, update that message too.
+  if (body.message?.ts && body.message.ts !== mapping.notificationTs) {
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: body.message.ts,
+      text: "⛓️‍💥Sync cancelled",
+      blocks: cancelledBlocks
+    });
+  }
+
+  console.log("🛑 Mapping removed via button:", key);
+});
+
+//Action for button to keep sync
+app.action('keep_sync', async ({ ack, body }) => {
+  await ack();
+
+  const key = body.actions[0].value;
+
+  // Ignore buttons from reminders for syncs that have already stopped.
+  if (!mappings.has(key)) return;
+
+  await app.client.chat.update({
+    channel: body.channel.id,
+    ts: body.message.ts,
+    text: "Sync will continue.",
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "⛓️‍💥Sync cancelled"
+          text: "Sync will continue."
         }
       }
     ]
   });
 
-  console.log("🛑 Mapping removed via button:", key);
+  const mapping = mappings.get(key);
+  if (mapping?.reminderTs === body.message.ts) {
+    mapping.reminderTs = null;
+    await saveMapping(key, mapping);
+  }
 });
 
 // ================= STEP 1 =================
@@ -281,7 +330,9 @@ app.message(async ({ message, client }) => {
       threadA: message.thread_ts,      // use event.thread_ts in app_mention
       channelB: info.channel,
       threadB: info.thread_ts,
-      notificationTs: null
+      notificationTs: null,
+      lastActivityAt: Date.now(),
+      reminderTs: null
     };
     
     mappings.set(key, mapping);
@@ -302,7 +353,7 @@ app.message(async ({ message, client }) => {
       await client.reactions.add({
         channel: message.channel,
         timestamp: message.thread_ts,
-        name: "link"
+        name: SYNC_START_EMOJI
       });
     } catch (err) {
       console.error("⚠️ Failed to add sync-start reaction:", err);
@@ -344,7 +395,9 @@ app.event('app_mention', async ({ event, client }) => {
       threadA: event.thread_ts,
       channelB: info.channel,
       threadB: info.thread_ts,
-      notificationTs: null
+      notificationTs: null,
+      lastActivityAt: Date.now(),
+      reminderTs: null
     };
 
     mappings.set(key, mapping);
@@ -364,7 +417,7 @@ app.event('app_mention', async ({ event, client }) => {
       await client.reactions.add({
         channel: event.channel,
         timestamp: event.thread_ts,
-        name: "link"
+        name: SYNC_START_EMOJI
       });
     } catch (err) {
       console.error("⚠️ Failed to add sync-start reaction:", err);
@@ -387,9 +440,21 @@ app.event('message', async ({ event, client }) => {
     if (event.bot_id && event.bot_id === process.env.SLACK_BOT_ID) return;
     if (event.username === "Spinarium Sync Bot") return;
 
-    const key = `${event.channel}_${event.thread_ts}`;
-    const mapping = mappings.get(key);
-
+    let key = `${event.channel}_${event.thread_ts}`;
+    let mapping = mappings.get(key);
+    
+    // If this message is in Channel A, find its mapping there.
+    if (!mapping) {
+      const entry = [...mappings.entries()].find(([, value]) =>
+        value.channelA === event.channel &&
+        value.threadA === event.thread_ts
+      );
+    
+      if (entry) {
+        [key, mapping] = entry;
+      }
+    }
+    
     if (!mapping) return;
     
     // Ignore only truly empty messages
@@ -404,6 +469,17 @@ app.event('message', async ({ event, client }) => {
     // Protection against changed and deleted messages
     if (event.subtype === 'message_changed') return;
     if (event.subtype === 'message_deleted') return;
+
+    mapping.lastActivityAt = Date.now();
+    await saveMapping(key, mapping);
+    
+    // Channel A messages count as activity, but are not forwarded by this handler.
+    if (
+      event.channel === mapping.channelA &&
+      event.thread_ts === mapping.threadA
+    ) {
+      return;
+    }
 
     // ================= USER INFO =================
     let username = "Unknown user";
@@ -710,7 +786,7 @@ app.event('reaction_added', async ({ event, client }) => {
           await client.reactions.remove({
             channel: value.channelA,
             timestamp: value.threadA,
-            name: "link"
+            name: SYNC_START_EMOJI
           });
         } catch (err) {
           console.error("⚠️ Failed to remove sync-start reaction:", err);
@@ -721,13 +797,13 @@ app.event('reaction_added', async ({ event, client }) => {
           await client.chat.update({
             channel: value.channelA,
             ts: value.notificationTs,
-            text: `Sync stopped (:${event.reaction}:)`,
+            text: `:${event.reaction}: Sync stopped`,
             blocks: [
               {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `Sync stopped (:${event.reaction}:)`
+                  text: `:${event.reaction}: Sync stopped`
                 }
               }
             ]
@@ -844,5 +920,93 @@ app.command('/sync-status', async ({ command, ack, client }) => {
 (async () => {
   await loadMappings();
   await app.start(process.env.PORT || 3000);
+
+  cron.schedule('0 10 * * *', async () => {
+    const now = Date.now();
+
+    for (const [key, mapping] of mappings.entries()) {
+      // Give existing Redis mappings a fresh 10-day period after this
+      // feature is deployed, rather than reminding immediately.
+      if (!mapping.lastActivityAt) {
+        mapping.lastActivityAt = now;
+        await saveMapping(key, mapping);
+        continue;
+      }
+
+      if (now - mapping.lastActivityAt < INACTIVITY_MS) {
+        continue;
+      }
+
+      try {
+        // Remove buttons from the previous reminder, if it still had them.
+        if (mapping.reminderTs) {
+          await client.chat.update({
+            channel: mapping.channelA,
+            ts: mapping.reminderTs,
+            text: "⏰ A newer sync reminder has been posted.",
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "⏰ A newer sync reminder has been posted."
+                }
+              }
+            ]
+          });
+        }
+
+        const reminder = await app.client.chat.postMessage({
+          channel: mapping.channelA,
+          thread_ts: mapping.threadA,
+          text: "⏰ No activity for 10 days. Please check it there are any updates and react correspondingly.",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "⏰ No activity for 10 days. Please check it there are any updates and react correspondingly."
+              }
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: "Stop sync"
+                  },
+                  style: "danger",
+                  value: key,
+                  action_id: "cancel_sync"
+                },
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: "Keep sync"
+                  },
+                  value: key,
+                  action_id: "keep_sync"
+                }
+              ]
+            }
+          ]
+        });
+
+        // The reminder counts as activity, so another reminder can be sent
+        // only after another 10 days without a new message.
+        mapping.lastActivityAt = Date.now();
+        mapping.reminderTs = reminder.ts;
+        await saveMapping(key, mapping);
+      } catch (err) {
+        console.error("❌ Failed to send inactivity reminder:", key, err);
+      }
+    }
+  }, {
+    timezone: "UTC"
+  });
+
   console.log('⚡️ Slack bot is running!');
 })();
