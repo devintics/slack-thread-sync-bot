@@ -144,7 +144,7 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
             type: "button",
             text: {
               type: "plain_text",
-              text: "⛓️‍💥Cancel sync"
+              text: "Cancel sync"
             },
             style: "danger",
             value: key, // we’ll use this to identify which mapping to remove
@@ -290,8 +290,8 @@ app.message(async ({ message, client }) => {
 
     try {
       await client.reactions.add({
-        channel: event.channel,
-        timestamp: event.thread_ts,
+        channel: message.channel,
+        timestamp: message.thread_ts,
         name: "link"
       });
     } catch (err) {
@@ -352,8 +352,8 @@ app.event('app_mention', async ({ event, client }) => {
 
     try {
       await client.reactions.add({
-        channel: message.channel,
-        timestamp: message.thread_ts,
+        channel: event.channel,
+        timestamp: event.thread_ts,
         name: "link"
       });
     } catch (err) {
