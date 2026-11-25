@@ -171,6 +171,16 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
   mappings.delete(key);
   await deleteMapping(key);
 
+  try {
+    await client.reactions.remove({
+      channel: mapping.channelA,
+      timestamp: mapping.threadA,
+      name: "link"
+    });
+  } catch (err) {
+    console.error("⚠️ Failed to remove sync-start reaction:", err);
+  }
+
   // Older mappings may not have a notification timestamp.
   if (!mapping.notificationTs) return;
 
@@ -695,6 +705,16 @@ app.event('reaction_added', async ({ event, client }) => {
         // 👉 Remove mapping (stop sync)
         mappings.delete(key);
         await deleteMapping(key);
+
+        try {
+          await client.reactions.remove({
+            channel: value.channelA,
+            timestamp: value.threadA,
+            name: "link"
+          });
+        } catch (err) {
+          console.error("⚠️ Failed to remove sync-start reaction:", err);
+        }
        
         // 👉 Confirmation message
         if (value.notificationTs) {
