@@ -125,7 +125,7 @@ function isBotMentioned(message) {
 
 // Post a message when threads are synced
 async function postSyncStartedMessage(client, channelA, threadA, key) {
-  await client.chat.postMessage({
+  const result = await client.chat.postMessage({
     channel: channelA,
     thread_ts: threadA,
     text: "🔄 Thread sync started",
@@ -154,6 +154,8 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
       }
     ]
   });
+
+  return result.ts;
 }
 
 app.action('cancel_sync', async ({ ack, body, client }) => {
@@ -161,15 +163,30 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
 
   const key = body.actions[0].value;
   const mapping = mappings.get(key);
+
+  // If sync was already stopped, make stale clicks harmless.
   if (!mapping) return;
 
+  // Remove it from memory first so another click cannot cancel it again.
   mappings.delete(key);
   await deleteMapping(key);
 
-  await client.chat.postMessage({
+  // Older mappings may not have a notification timestamp.
+  if (!mapping.notificationTs) return;
+
+  await client.chat.update({
     channel: mapping.channelA,
-    thread_ts: mapping.threadA,
-    text: "🛑 Sync cancelled"
+    ts: mapping.notificationTs,
+    text: "Sync cancelled",
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "Sync cancelled"
+        }
+      }
+    ]
   });
 
   console.log("🛑 Mapping removed via button:", key);
@@ -250,10 +267,11 @@ app.message(async ({ message, client }) => {
     const key = `${info.channel}_${info.thread_ts}`;
 
     const mapping = {
-      channelA: message.channel,
-      threadA: message.thread_ts,
+      channelA: message.channel,       // use event.channel in app_mention
+      threadA: message.thread_ts,      // use event.thread_ts in app_mention
       channelB: info.channel,
-      threadB: info.thread_ts
+      threadB: info.thread_ts,
+      notificationTs: null
     };
     
     mappings.set(key, mapping);
@@ -262,7 +280,13 @@ app.message(async ({ message, client }) => {
     console.log("✅ Mapping created:", key);
 
     // ✅ Post sync started message
-    await postSyncStartedMessage(client, message.channel, message.thread_ts, key);
+    mapping.notificationTs = await postSyncStartedMessage(
+      client,
+      message.channel,
+      message.thread_ts,
+      key
+    );
+    await saveMapping(key, mapping);
 
   } catch (err) {
     console.error("❌ Error in link detection:", err);
@@ -299,7 +323,8 @@ app.event('app_mention', async ({ event, client }) => {
       channelA: event.channel,
       threadA: event.thread_ts,
       channelB: info.channel,
-      threadB: info.thread_ts
+      threadB: info.thread_ts,
+      notificationTs: null
     };
 
     mappings.set(key, mapping);
@@ -307,12 +332,13 @@ app.event('app_mention', async ({ event, client }) => {
 
     console.log("✅ Mention-created mapping:", key);
 
-    await postSyncStartedMessage(
+    mapping.notificationTs = await postSyncStartedMessage(
       client,
       event.channel,
       event.thread_ts,
       key
     );
+    await saveMapping(key, mapping);
 
   } catch (err) {
     console.error("❌ Error in app mention handler:", err);
@@ -651,12 +677,23 @@ app.event('reaction_added', async ({ event, client }) => {
         await deleteMapping(key);
        
         // 👉 Confirmation message
-        await client.chat.postMessage({
-          channel: channelA,
-          thread_ts: threadA,
-          text: `Sync stopped (:${event.reaction}:)`
-        });
-
+        if (value.notificationTs) {
+          await client.chat.update({
+            channel: value.channelA,
+            ts: value.notificationTs,
+            text: `Sync stopped (:${event.reaction}:)`,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `Sync stopped (:${event.reaction}:)`
+                }
+              }
+            ]
+          });
+        }
+        
         console.log("🛑 Mapping removed:", key);
       }
     }
