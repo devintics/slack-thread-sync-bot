@@ -128,13 +128,13 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
   const result = await client.chat.postMessage({
     channel: channelA,
     thread_ts: threadA,
-    text: "🔄 Thread sync started",
+    text: "🔗 Thread sync started",
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "🔄 *Sync started*"
+          text: "🔗 *Sync started*"
         }
       },
       {
@@ -144,7 +144,7 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
             type: "button",
             text: {
               type: "plain_text",
-              text: "Cancel sync"
+              text: "⛓️‍💥Cancel sync"
             },
             style: "danger",
             value: key, // we’ll use this to identify which mapping to remove
@@ -177,13 +177,13 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
   await client.chat.update({
     channel: mapping.channelA,
     ts: mapping.notificationTs,
-    text: "Sync cancelled",
+    text: "⛓️‍💥Sync cancelled",
     blocks: [
       {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "Sync cancelled"
+          text: "⛓️‍💥Sync cancelled"
         }
       }
     ]
@@ -288,6 +288,16 @@ app.message(async ({ message, client }) => {
     );
     await saveMapping(key, mapping);
 
+    try {
+      await client.reactions.add({
+        channel: event.channel,
+        timestamp: event.thread_ts,
+        name: "link"
+      });
+    } catch (err) {
+      console.error("⚠️ Failed to add sync-start reaction:", err);
+    }
+    
   } catch (err) {
     console.error("❌ Error in link detection:", err);
   }
@@ -339,6 +349,16 @@ app.event('app_mention', async ({ event, client }) => {
       key
     );
     await saveMapping(key, mapping);
+
+    try {
+      await client.reactions.add({
+        channel: message.channel,
+        timestamp: message.thread_ts,
+        name: "link"
+      });
+    } catch (err) {
+      console.error("⚠️ Failed to add sync-start reaction:", err);
+    }
 
   } catch (err) {
     console.error("❌ Error in app mention handler:", err);
@@ -637,7 +657,7 @@ app.event('message', async ({ event, client }) => {
       blocks
     });
 
-    console.log("🔄 Synced message with attachments:", key);
+    console.log("🔗 Synced message with attachments:", key);
 
   } catch (err) {
     console.error("❌ Error syncing message:", err);
