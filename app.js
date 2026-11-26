@@ -1034,7 +1034,7 @@ app.command('/sync-status', async ({ command, ack, client }) => {
       try {
         // Remove buttons from the previous reminder, if it still had them.
         if (mapping.reminderTs) {
-          await client.chat.update({
+          await app.client.chat.update({
             channel: mapping.channelA,
             ts: mapping.reminderTs,
             text: "⏰ A newer sync reminder has been posted.",
