@@ -168,7 +168,7 @@ async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
   if (
     !mapping.latestSyncedMessageTs ||
     !Array.isArray(mapping.latestSyncedMessageBlocks) ||
-    mapping.latestSyncedMessageBlocks.length >= 50
+    mapping.latestSyncedMessageBlocks.length > 48
   ) {
     return false;
   }
@@ -184,8 +184,15 @@ async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
   await client.chat.update({
     channel: mapping.channelA,
     ts: mapping.latestSyncedMessageTs,
-    text: `${statusText}\n\n${mapping.latestSyncedMessageText || ""}`,
+    text: `⛓️‍💥\n\n${mapping.latestSyncedMessageText || ""}\n\n${statusText}`,
     blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "⛓️‍💥"
+        }
+      },
       ...mapping.latestSyncedMessageBlocks,
       statusBlock
     ]
