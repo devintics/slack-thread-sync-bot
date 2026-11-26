@@ -163,6 +163,37 @@ async function postSyncStartedMessage(client, channelA, threadA, key) {
   return result.ts;
 }
 
+// Latest synced message status update
+async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
+  if (
+    !mapping.latestSyncedMessageTs ||
+    !Array.isArray(mapping.latestSyncedMessageBlocks) ||
+    mapping.latestSyncedMessageBlocks.length >= 50
+  ) {
+    return false;
+  }
+
+  const statusBlock = {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: statusText
+    }
+  };
+
+  await client.chat.update({
+    channel: mapping.channelA,
+    ts: mapping.latestSyncedMessageTs,
+    text: `${mapping.latestSyncedMessageText || ""}\n\n${statusText}`,
+    blocks: [
+      ...mapping.latestSyncedMessageBlocks,
+      statusBlock
+    ]
+  });
+
+  return true;
+}
+
 // Action for button to stop/cancel sync
 app.action('cancel_sync', async ({ ack, body, client }) => {
   await ack();
@@ -187,35 +218,47 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
     console.error("⚠️ Failed to remove sync-start reaction:", err);
   }
 
-  const cancelledBlocks = [
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "⛓️‍💥Sync cancelled"
-      }
+  const statusText = "⛓️‍💥 Sync cancelled";
+const statusAddedToLatestMessage =
+  await addStatusToLatestSyncedMessage(client, mapping, statusText);
+
+const notificationBlocks = [
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "🔗 *Sync started*"
     }
-  ];
-
-  // Update the original sync notification, if it has a saved timestamp.
-  if (mapping.notificationTs) {
-    await client.chat.update({
-      channel: mapping.channelA,
-      ts: mapping.notificationTs,
-      text: "⛓️‍💥Sync cancelled",
-      blocks: cancelledBlocks
-    });
   }
+];
 
-  // If Stop sync was clicked on a reminder, update that message too.
-  if (body.message?.ts && body.message.ts !== mapping.notificationTs) {
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: body.message.ts,
-      text: "⛓️‍💥Sync cancelled",
-      blocks: cancelledBlocks
-    });
-  }
+// If there is no tracked forwarded message, show the status below
+// the unchanged sync-start text in the original notification.
+if (!statusAddedToLatestMessage) {
+  notificationBlocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: statusText
+    }
+  });
+}
+
+if (mapping.notificationTs) {
+  await client.chat.update({
+    channel: mapping.channelA,
+    ts: mapping.notificationTs,
+    text: "🔗 Thread sync started",
+    blocks: notificationBlocks
+  });
+} else if (!statusAddedToLatestMessage) {
+  // Fallback for older mappings without a saved notification timestamp.
+  await client.chat.postMessage({
+    channel: mapping.channelA,
+    thread_ts: mapping.threadA,
+    text: statusText
+  });
+}
 
   console.log("🛑 Mapping removed via button:", key);
 });
@@ -326,13 +369,16 @@ app.message(async ({ message, client }) => {
     const key = `${info.channel}_${info.thread_ts}`;
 
     const mapping = {
-      channelA: message.channel,       // use event.channel in app_mention
-      threadA: message.thread_ts,      // use event.thread_ts in app_mention
+      channelA: message.channel,
+      threadA: message.thread_ts,
       channelB: info.channel,
       threadB: info.thread_ts,
       notificationTs: null,
       lastActivityAt: Date.now(),
-      reminderTs: null
+      reminderTs: null,
+      latestSyncedMessageTs: null,
+      latestSyncedMessageText: null,
+      latestSyncedMessageBlocks: null
     };
     
     mappings.set(key, mapping);
@@ -397,7 +443,10 @@ app.event('app_mention', async ({ event, client }) => {
       threadB: info.thread_ts,
       notificationTs: null,
       lastActivityAt: Date.now(),
-      reminderTs: null
+      reminderTs: null,
+      latestSyncedMessageTs: null,
+      latestSyncedMessageText: null,
+      latestSyncedMessageBlocks: null
     };
 
     mappings.set(key, mapping);
@@ -731,7 +780,7 @@ app.event('message', async ({ event, client }) => {
     
     const fallbackText = `${username}: ${fallback || ""}`;
 
-    await client.chat.postMessage({
+    const syncedMessage = await client.chat.postMessage({
       channel: mapping.channelA,
       thread_ts: mapping.threadA,
     
@@ -742,6 +791,12 @@ app.event('message', async ({ event, client }) => {
     
       blocks
     });
+
+    // Save latest synced message info
+    mapping.latestSyncedMessageTs = syncedMessage.ts;
+    mapping.latestSyncedMessageText = fallbackText;
+    mapping.latestSyncedMessageBlocks = blocks;
+    await saveMapping(key, mapping);
 
     console.log("🔗 Synced message with attachments:", key);
 
@@ -793,20 +848,45 @@ app.event('reaction_added', async ({ event, client }) => {
         }
        
         // 👉 Confirmation message
-        if (value.notificationTs) {
-          await client.chat.update({
-            channel: value.channelA,
-            ts: value.notificationTs,
-            text: `:${event.reaction}: Sync stopped`,
-            blocks: [
+        const statusText = `:${event.reaction}: Sync stopped`;
+        const statusAddedToLatestMessage =
+          await addStatusToLatestSyncedMessage(client, value, statusText);
+        
+        const syncStartedBlock = {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: "🔗 *Sync started*"
+          }
+        };
+        
+        // Keep the original notification text. If there is no saved
+        // forwarded message to update, show the stop status below it.
+        const notificationBlocks = statusAddedToLatestMessage
+          ? [syncStartedBlock]
+          : [
+              syncStartedBlock,
               {
                 type: "section",
                 text: {
                   type: "mrkdwn",
-                  text: `:${event.reaction}: Sync stopped`
+                  text: statusText
                 }
               }
-            ]
+            ];
+        
+        if (value.notificationTs) {
+          await client.chat.update({
+            channel: value.channelA,
+            ts: value.notificationTs,
+            text: "🔗 Thread sync started",
+            blocks: notificationBlocks
+          });
+        } else if (!statusAddedToLatestMessage) {
+          await client.chat.postMessage({
+            channel: value.channelA,
+            thread_ts: value.threadA,
+            text: statusText
           });
         }
         
