@@ -564,7 +564,21 @@ app.event('message', async ({ event, client }) => {
     const blocks = [];
 
     // 👤 Header
-    const threadUrl = buildSlackThreadUrl(event.channel, event.thread_ts);
+    let originalMessageUrl = buildSlackThreadUrl(
+      event.channel,
+      event.thread_ts
+    );
+    
+    try {
+      const permalinkResult = await client.chat.getPermalink({
+        channel: event.channel,
+        message_ts: event.ts
+      });
+    
+      originalMessageUrl = permalinkResult.permalink || originalMessageUrl;
+    } catch (err) {
+      console.error("⚠️ Failed to get original message permalink:", err);
+    }
     
     blocks.push({
       type: "context",
@@ -576,7 +590,7 @@ app.event('message', async ({ event, client }) => {
         },
         {
           type: "mrkdwn",
-          text: `*${username}* · <${threadUrl}|original thread>`
+          text: `*${username}* · <${originalMessageUrl}|original message>`
         }
       ]
     });
