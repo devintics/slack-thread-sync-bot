@@ -184,10 +184,10 @@ async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
   await client.chat.update({
     channel: mapping.channelA,
     ts: mapping.latestSyncedMessageTs,
-    text: `${mapping.latestSyncedMessageText || ""}\n\n${statusText}`,
+    text: `${statusText}\n\n${mapping.latestSyncedMessageText || ""}`,
     blocks: [
-      ...mapping.latestSyncedMessageBlocks,
-      statusBlock
+      statusBlock,
+      ...mapping.latestSyncedMessageBlocks
     ]
   });
 
