@@ -186,8 +186,8 @@ async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
     ts: mapping.latestSyncedMessageTs,
     text: `${statusText}\n\n${mapping.latestSyncedMessageText || ""}`,
     blocks: [
-      statusBlock,
-      ...mapping.latestSyncedMessageBlocks
+      ...mapping.latestSyncedMessageBlocks,
+      statusBlock
     ]
   });
 
