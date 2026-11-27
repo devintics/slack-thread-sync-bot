@@ -201,17 +201,12 @@ async function addStatusToLatestSyncedMessage(client, mapping, statusText) {
   return true;
 }
 
-// Action for button to stop/cancel sync
-app.action('cancel_sync', async ({ ack, body, client }) => {
-  await ack();
-
-  const key = body.actions[0].value;
+// Helper for mapping removal
+async function stopSyncMapping(key, client, statusText, notificationTsFallback = null) {
   const mapping = mappings.get(key);
+  if (!mapping) return null;
 
-  // If sync was already stopped, make stale clicks harmless.
-  if (!mapping) return;
-
-  // Remove it from memory first so another click cannot cancel it again.
+  // Stop the sync first so another button click can't stop it again.
   mappings.delete(key);
   await deleteMapping(key);
 
@@ -225,52 +220,131 @@ app.action('cancel_sync', async ({ ack, body, client }) => {
     console.error("⚠️ Failed to remove sync-start reaction:", err);
   }
 
-  const statusText = "⛓️‍💥 Sync cancelled";
-const statusAddedToLatestMessage =
-  await addStatusToLatestSyncedMessage(client, mapping, statusText);
+  try {
+    await addStatusToLatestSyncedMessage(client, mapping, statusText);
+  } catch (err) {
+    console.error("⚠️ Failed to update latest synced message:", err);
+  }
 
-const notificationBlocks = [
-  {
-    type: "section",
-    text: {
-      type: "mrkdwn",
-      text: "🔗 *Sync started*"
+  // Keep the original notification text; supplying blocks without actions
+  // removes its Cancel sync button.
+  const notificationTs = mapping.notificationTs || notificationTsFallback;
+
+  if (notificationTs) {
+    try {
+      await client.chat.update({
+        channel: mapping.channelA,
+        ts: notificationTs,
+        text: "🔗 Thread sync started",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "🔗 *Sync started*"
+            }
+          }
+        ]
+      });
+    } catch (err) {
+      console.error("⚠️ Failed to update sync-start notification:", err);
     }
   }
-];
 
-// If there is no tracked forwarded message, show the status below
-// the unchanged sync-start text in the original notification.
-if (!statusAddedToLatestMessage) {
-  notificationBlocks.push({
-    type: "section",
-    text: {
-      type: "mrkdwn",
-      text: statusText
-    }
-  });
+  return mapping;
 }
 
-if (mapping.notificationTs) {
-  await client.chat.update({
-    channel: mapping.channelA,
-    ts: mapping.notificationTs,
-    text: "🔗 Thread sync started",
-    blocks: notificationBlocks
-  });
-} else if (!statusAddedToLatestMessage) {
-  // Fallback for older mappings without a saved notification timestamp.
-  await client.chat.postMessage({
-    channel: mapping.channelA,
-    thread_ts: mapping.threadA,
-    text: statusText
-  });
+async function updateStoppedReminder(client, mapping, reminderTs, statusText) {
+  if (!reminderTs) return;
+
+  try {
+    await client.chat.update({
+      channel: mapping.channelA,
+      ts: reminderTs,
+      text: statusText,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: statusText
+          }
+        }
+      ]
+    });
+  } catch (err) {
+    console.error("⚠️ Failed to update inactivity reminder:", err);
+  }
 }
 
-  console.log("🛑 Mapping removed via button:", key);
+// Action for Cancel sync button
+app.action('cancel_sync', async ({ ack, body, client }) => {
+  await ack();
+
+  const key = body.actions[0].value;
+  const currentMapping = mappings.get(key);
+
+  // Ignore stale buttons after the sync has already stopped.
+  if (!currentMapping) return;
+
+  // Support reminder buttons already posted by the old version, which still
+  // have action_id "cancel_sync".
+  const clickedLegacyReminder =
+    Boolean(currentMapping.reminderTs) &&
+    body.message?.ts === currentMapping.reminderTs;
+
+  const statusText = "⛓️‍💥 Sync cancelled";
+
+  const mapping = await stopSyncMapping(
+    key,
+    client,
+    statusText,
+    clickedLegacyReminder ? null : body.message?.ts
+  );
+
+  if (!mapping) return;
+
+  // Close an older reminder whose button still uses action_id "cancel_sync".
+  if (clickedLegacyReminder) {
+    await updateStoppedReminder(
+      client,
+      mapping,
+      body.message.ts,
+      statusText
+    );
+  }
+
+  console.log("🛑 Mapping removed via Cancel sync button:", key);
 });
 
-//Action for button to keep sync
+// Action for Stop sync button
+app.action('stop_sync_reminder', async ({ ack, body, client }) => {
+  await ack();
+
+  const key = body.actions[0].value;
+  const statusText = "⛓️‍💥 Sync cancelled";
+
+  const mapping = await stopSyncMapping(
+    key,
+    client,
+    statusText
+  );
+
+  // Ignore a reminder button clicked after the sync was already stopped.
+  if (!mapping) return;
+
+  // Update this reminder and remove both reminder buttons.
+  await updateStoppedReminder(
+    client,
+    mapping,
+    body.message?.ts,
+    statusText
+  );
+
+  console.log("🛑 Mapping removed via reminder button:", key);
+});
+
+// Action for Keep sync button
 app.action('keep_sync', async ({ ack, body }) => {
   await ack();
 
@@ -854,64 +928,25 @@ app.event('reaction_added', async ({ event, client }) => {
           console.error("⚠️ Failed to add reaction to B:", err);
         }
 
-        // 👉 Remove mapping (stop sync)
-        mappings.delete(key);
-        await deleteMapping(key);
-
-        try {
-          await client.reactions.remove({
-            channel: value.channelA,
-            timestamp: value.threadA,
-            name: SYNC_START_EMOJI
-          });
-        } catch (err) {
-          console.error("⚠️ Failed to remove sync-start reaction:", err);
-        }
-       
-        // 👉 Confirmation message
+        // Stop syncing
         const statusText = `:${event.reaction}: Sync stopped`;
-        const statusAddedToLatestMessage =
-          await addStatusToLatestSyncedMessage(client, value, statusText);
+        const stoppedMapping = await stopSyncMapping(
+          key,
+          client,
+          statusText
+        );
         
-        const syncStartedBlock = {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: "🔗 *Sync started*"
-          }
-        };
-        
-        // Keep the original notification text. If there is no saved
-        // forwarded message to update, show the stop status below it.
-        const notificationBlocks = statusAddedToLatestMessage
-          ? [syncStartedBlock]
-          : [
-              syncStartedBlock,
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: statusText
-                }
-              }
-            ];
-        
-        if (value.notificationTs) {
-          await client.chat.update({
-            channel: value.channelA,
-            ts: value.notificationTs,
-            text: "🔗 Thread sync started",
-            blocks: notificationBlocks
-          });
-        } else if (!statusAddedToLatestMessage) {
-          await client.chat.postMessage({
-            channel: value.channelA,
-            thread_ts: value.threadA,
-            text: statusText
-          });
+        if (stoppedMapping?.reminderTs) {
+          await updateStoppedReminder(
+            client,
+            stoppedMapping,
+            stoppedMapping.reminderTs,
+            statusText
+          );
         }
         
         console.log("🛑 Mapping removed:", key);
+        break;
       }
     }
 
@@ -1060,13 +1095,13 @@ app.command('/sync-status', async ({ command, ack, client }) => {
         const reminder = await app.client.chat.postMessage({
           channel: mapping.channelA,
           thread_ts: mapping.threadA,
-          text: "⏰ No activity for 10 days. Please check it there are any updates and react correspondingly.",
+          text: "⏰ No activity for 10 days. Please check if there are any updates and react correspondingly.",
           blocks: [
             {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: "⏰ No activity for 10 days. Please check it there are any updates and react correspondingly."
+                text: "⏰ No activity for 10 days. Please check if there are any updates and react correspondingly."
               }
             },
             {
@@ -1080,7 +1115,7 @@ app.command('/sync-status', async ({ command, ack, client }) => {
                   },
                   style: "danger",
                   value: key,
-                  action_id: "cancel_sync"
+                  action_id: "stop_sync_reminder"
                 },
                 {
                   type: "button",
