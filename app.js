@@ -322,8 +322,19 @@ app.action('stop_sync_reminder', async ({ ack, body, client }) => {
   await ack();
 
   const key = body.actions[0].value;
+  const currentMapping = mappings.get(key);
+  
+  // Ignore stopped syncs and buttons from an old or dismissed reminder.
+  if (
+    !currentMapping ||
+    !currentMapping.reminderTs ||
+    body.message?.ts !== currentMapping.reminderTs
+  ) {
+    return;
+  }
+  
   const statusText = "⛓️‍💥 Sync cancelled";
-
+  
   const mapping = await stopSyncMapping(
     key,
     client,
